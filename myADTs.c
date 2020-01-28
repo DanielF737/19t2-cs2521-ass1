@@ -9,51 +9,210 @@
 #include <math.h>
 
 #include "myADTs.h"
+#include "invertedIndex.h"
 
-//My implementation of strdup
-char *dupestring(char *original) {
-    int len;
-    static char *dupe;
-    char *offset;
-
-    //Allocate memory
-    len = strlen(original);
-    dupe = (char *)malloc(sizeof(char)*len+1);
-    if (dupe == NULL)
-        return( (char *)NULL);
-
-    //Copy 
-    offset = dupe;
-    while(*original) {
-        *offset = *original;
-        offset++;
-        original++;
-    }
-    *offset = '\0';
-
-    return(dupe);
+//Returns a null pointer to act as an empty tree node
+InvertedIndexBST newTree(void) {
+    return NULL;
 }
 
-//When given an array finds the corresponding id
-int findID(char **names, char *name, int length) {
-    int i=0;
-    while (i<length) {
-        if (strcmp(names[i],name)==0)
-            return i;
-        i++;
-    }
-    return -1;
+//Allocates nescessary memory and assigns values for new tree nodes
+InvertedIndexBST newNode(char *word, int d, char *file) {
+    InvertedIndexBST new = malloc (sizeof *new);
+    new->word = malloc(sizeof(char)*(strlen(word)+1));
+    strcpy(new->word, word);
+    new->fileList= newFileList(d, file);
+    new->left = new->right = NULL;
+    return new;
 }
 
-//Makes a string lowercase
-char * lowerCase(char *string) {
-    int length = strlen(string), i=0;
-    while (i<length) {
-        if (string[i] >= 'A' && string[i] <= 'Z')
-            string[i]+=32;
-        i++;
+//Inserts a node into the tree based on alphabetical order, or if the word is already in the
+//tree, add the file to the file list
+InvertedIndexBST InvertedIndexBSTInsert (InvertedIndexBST t, char *word, int d, char *file) {
+    if (t == NULL) 
+		return newNode(word, d, file);
+	else if (strcmp(t->word, word) < 0) 
+		t->left = InvertedIndexBSTInsert (t->left, word, d, file);
+    else if (strcmp(t->word, word) > 0) 
+		t->right = InvertedIndexBSTInsert (t->right, word, d, file);
+    if (strcmp(t->word, word) == 0) 
+        t->fileList=FileListInsert(t->fileList, d, file);
+    return t;
+}
+
+//Navigates the tree to find a word, if a word doesnt exist in the tree, return a NULL pointer
+InvertedIndexBST FindNode(InvertedIndexBST t, char *word) {
+    if (t==NULL) 
+        return NULL;
+    else if (strcmp(word, t->word) > 0) 
+        return FindNode(t->left, word);
+    else if (strcmp(word, t->word) < 0) 
+        return FindNode(t->right, word);
+    else 
+        return t;
+}
+
+//Print the tree in Infix order
+void InvertedIndexBSTreeInfix (InvertedIndexBST t, FILE *fp) {
+	if (t == NULL) return;
+	InvertedIndexBSTreeInfix (t->right, fp);
+	InvertedIndexshowBSTreeNode (t, fp);
+	InvertedIndexBSTreeInfix (t->left, fp);
+}
+
+//Prints a tree node
+void InvertedIndexshowBSTreeNode (InvertedIndexBST t, FILE *fp) {
+	if (t == NULL) return;
+	fprintf (fp, "%s ", t->word);
+    showFileList(t->fileList, fp);
+    fprintf(fp, "\n");
+}
+
+//Initializes a node for a file list, allocating necessary memory and assigning values
+FileList newFileList(int d, char *file) {
+    FileList newF = malloc(sizeof(FileList));
+    newF->filename = malloc(sizeof(char)*(strlen(file)+1));
+    strcpy(newF->filename,file);
+    newF->tf=(1/(double)d);
+    newF->next = NULL;
+    return newF;
+}
+
+//Insert a node into a file list based on alphabetical order, if the file exists in the 
+//list, alter the Tf value aproprietly
+FileList FileListInsert(FileList l, int d, char *file) {
+    if (l==NULL)
+        return newFileList(d, file);
+    else if (strcmp(file, l->filename)<0) {
+        FileList new = MakeListNodeCopy(l);
+        l->filename=realloc(l->filename, sizeof(char)*(strlen(file)+1));
+        strcpy(l->filename,file);
+        l->next=new;
+        l->tf=1/(double)d;
+    } else if (strcmp(file, l->filename)==0)
+        l->tf=((l->tf*(double)d)+1)/(double)d; //tf*d = the number of times the word already occured in the file
+    else
+        l->next=FileListInsert(l->next,d,file);
+    return l;
+}
+
+//Makes a copy of a list node
+FileList MakeListNodeCopy(FileList src) {
+    FileList new = newFileList(1, src->filename);
+    new->tf=src->tf;
+    new->next=src->next;
+    return new;
+}
+
+//Recursively finds the length of a file list
+int LengthFileList(FileList l) {
+    int count;
+    if (l==NULL)
+        return 0;
+    else 
+        return count = 1+LengthFileList(l->next);
+}
+
+//Prints a file list node
+void showFileList(FileList l, FILE *fp) {
+    if (l==NULL) return;
+    fprintf(fp, "%s ", l->filename);
+    showFileList(l->next, fp);
+    return;
+}
+
+//Calculates a TfIdf value based on tf, the number of files containing the word (c) and the total number of files (D)
+double calculateTfIdfVal(double tf, int c, int D) {
+    double tfIdf=(-1)*tf* log10((double) c/(double) D);
+    return tfIdf;
+}
+
+//Returns a null pointer to act as an empty list node
+TfIdfList newTfIdfList(void) {
+    return NULL;
+}
+
+//Allocates nescessary memory and assigns values for new list nodes
+TfIdfList newTfIdfNode(double tfIdf, char *file) {
+    TfIdfList new = malloc(sizeof(*new));
+    new->filename = malloc(sizeof(char)*(strlen(file)+1));
+    strcpy(new->filename,file);
+    new->tfidf_sum = tfIdf;
+    new->next=NULL;
+    return new;
+}
+
+//Inserts a node into the list based on descending tfidf order. If they have the same tfidf value, sort alphabetically
+TfIdfList TfIdfInsert(TfIdfList l, double tfIdf, char *file){
+    if (l==NULL)
+        return newTfIdfNode(tfIdf, file);
+    else if (tfIdf > l->tfidf_sum) {
+        TfIdfList new = MakeTfIdfNodeCopy(l);
+        l->filename=realloc(l->filename, sizeof(char)*(strlen(file)+1));
+        strcpy(l->filename,file);
+        l->tfidf_sum=tfIdf;
+        l->next=new;
+        return l;
+    } else if (tfIdf < l->tfidf_sum)
+        l->next=TfIdfInsert(l->next, tfIdf, file);
+    else {
+        if (strcmp(file, l->filename) < 0) {
+            TfIdfList new = MakeTfIdfNodeCopy(l);
+            l->filename=realloc(l->filename, sizeof(char)*(strlen(file)+1));
+            strcpy(l->filename,file);
+            l->tfidf_sum=tfIdf;
+            l->next=new;
+            return l;
+        } else
+            l->next=TfIdfInsert(l->next, tfIdf, file);
     }
-    return string;
+    return l;
+}
+
+//Makes a copy of a list node
+TfIdfList MakeTfIdfNodeCopy(TfIdfList src) {
+    TfIdfList new = newTfIdfNode(src->tfidf_sum, src->filename);
+    new->next=src->next;
+    return new;
+}
+
+//Returns a 1 or a 0 depending on whether a file is in or not in a tfidf list respectively
+int inTfIdfList(TfIdfList l, char *value) {
+    if (l==NULL)
+        return 0;
+    else if (strcmp(l->filename, value)==0)
+        return 1;
+    else
+        return inTfIdfList(l->next, value);
+}
+
+//Find a node in a TfIdf list and return it
+TfIdfList findNodeTfIdfList(TfIdfList l, char *value) {
+    if (l==NULL)
+        return NULL;
+    else if (strcmp(l->filename, value)==0)
+        return l;
+    else
+        return findNodeTfIdfList(l->next, value);
+}
+
+//Sorts a tfidf list into descending order (alphabetical if the tfidf values are the same) and stores them in a 
+//new list
+TfIdfList reorderTfIdfList(TfIdfList src, TfIdfList dest){
+    if (src==NULL) 
+        return NULL;
+    else {
+        dest=TfIdfInsert(dest, src->tfidf_sum, src->filename);
+        reorderTfIdfList(src->next, dest);
+        return dest;
+    }
+}
+
+//Free all memory associated with a tfidf list
+void freeTfIdfList(TfIdfList l) {
+    if (l->next!=NULL) freeTfIdfList(l->next);
+    free(l->filename);
+    free(l);
 }
 
 //Returns a null pointer to act as an empty list node
@@ -79,370 +238,11 @@ List appendItemList(List l, char *value) {
     return l;
 }
 
-//Returns the length of a List
-int lengthList(List l){
-    if (l!=NULL)
-        return 1+lengthList(l->next);
-    return 0;
-}
-
-//prints the list to STDOUT
-void showList(List l){
-    if (l==NULL)
-        return;
-    printf("%s ", l->value);
-    showList(l->next);
-    return;
-}
-
 //free all memory associated with a list
 void freeList(List l) {
     if (l->next!=NULL)
         freeList(l->next);
     free(l->value);
     free(l);
-    return;
-}
-
-//Creates a new Pagelist
-PageList newPageList(void){
-    return NULL;
-}
-
-//Creates a new Pagelist node
-PageList newPageListNode(int url, int degrees, double value) {
-    PageList new = malloc(sizeof(*new));
-    new->url = url;
-    new->degrees=degrees;
-    new->value=value;
-    new->next=NULL;
-    return new;
-}
-
-//Appends an item to the end of the Pagelist
-PageList appendItemPageList(PageList l, int url, int degrees, double value) {
-    if (l==NULL)
-        return newPageListNode(url, degrees, value);
-    else { 
-        if (value>l->value) {
-            PageList new = newPageListNode(l->url, l->degrees, l->value);
-            new->next = l->next;
-            l->next = new;
-            l->url = url;
-            l->degrees=degrees;
-            l->value=value;
-        } else 
-            l->next=appendItemPageList(l->next, url, degrees, value);
-    }
-    return l;
-}
-
-//Sorts a page list
-PageList sortPageList(PageList src, PageList dest){
-    if (src==NULL) 
-        return NULL;
-    else {
-        dest=appendItemPageList(dest, src->url, src->degrees, src->value);
-        sortPageList(src->next, dest);
-        return dest;
-    }
-}
-
-//Returns a page list node when searching by ID
-PageList findPageList(PageList l, int url) {
-    if (l==NULL) 
-        return NULL;
-    if (l->url==url) 
-        return l;
-    return findPageList(l->next, url);
-}
-
-//Returns 0 or 1 whether or not a url is in a PageList respectively
-int inPageList(PageList l, int url) {
-    if (l==NULL)
-        return 1;
-    if (l->url==url)
-        return 0;
-    return inPageList(l->next, url);
-}
-
-//Returns the length of a PageList
-int lengthPageList(PageList l) {
-    if (l!=NULL)
-        return 1+lengthPageList(l->next);
-    return 0;
-}
-
-//Prints a pagelist to a specified file pointer
-void showPageList(PageList l, char **names, FILE *outfile) {
-    if (l!=NULL) {
-        fprintf(outfile, "%s, %d, %0.7f\n", names[l->url], l->degrees, l->value);
-        showPageList(l->next, names, outfile);
-    }
-    return;
-}
-
-//Frees all memory associated with the Pagelist
-void freePageList(PageList l) {
-    if (l==NULL) return;
-    if (l->next!=NULL)
-        freePageList(l->next);
-    free(l);
-    return;
-}
-
-//Creates a new CountedPagelist
-CountedPageList newCountedPageList(void) {
-    return NULL;
-}
-
-//Creates a new CountedPagelist node
-CountedPageList newCountedPageListNode(int url, int degrees, double value) {
-    CountedPageList new = malloc(sizeof(*new));
-    new->url = url;
-    new->occur=0;
-    new->degrees=degrees;
-    new->value=value;
-    new->next=NULL;
-    return new;
-}
-
-//Returns a counted page list node when searching by ID
-CountedPageList findCountedPageList(CountedPageList l, int url) {
-    if (l==NULL) 
-        return NULL;
-    if (l->url==url) 
-        return l;
-    return findCountedPageList(l->next, url);
-}
-
-//Appends an item to the end of the CountedPagelist
-CountedPageList appendItemCountedPageList(CountedPageList l, int url, int degrees, double value, int occur) {
-    if (l==NULL)
-        return newCountedPageListNode(url, degrees, value);
-    else { 
-        if (occur == l->occur) {
-            if (value>l->value) {
-                CountedPageList new = newCountedPageListNode(l->url, l->degrees, l->value);
-                new->next = l->next;
-                l->next = new;
-                l->url = url;
-                l->degrees=degrees;
-                l->value=value;
-                l->occur=occur;
-            } else 
-                l->next=appendItemCountedPageList(l->next, url, degrees, value, occur);
-        } else if (occur>l->occur) {
-            CountedPageList new = newCountedPageListNode(l->url, l->degrees, l->value);
-            new->next = l->next;
-            l->next = new;
-            l->url = url;
-            l->degrees=degrees;
-            l->value=value;
-            l->occur=occur;
-        } else 
-            l->next=appendItemCountedPageList(l->next, url, degrees, value, occur);
-    }
-    return l;
-}
-
-
-//Sorts a counted page list
-CountedPageList sortCountedPageList(CountedPageList src, CountedPageList dest) {
-    if (src==NULL) 
-        return NULL;
-    else {
-        dest=appendItemCountedPageList(dest, src->url, src->degrees, src->value, src->occur);
-        sortCountedPageList(src->next, dest);
-        return dest;
-    }
-}
-
-//Returns 0 or 1 whether or not a url is in a CountedPageList respectively
-int inCountedPageList(CountedPageList l, int url){
-    if (l==NULL)
-        return 1;
-    if (l->url==url)
-        return 0;
-    return inCountedPageList(l->next, url);
-}
-
-//Frees all memory associated with the CountedPagelist
-void freeCountedPageList(CountedPageList l) {
-    if (l==NULL) return;
-    if (l->next!=NULL)
-        freeCountedPageList(l->next);
-    free(l);
-    return;
-}
-
-//Counts inbound connections to a graph node
-int inConnect(Graph g, Vertex dest) {
-	int connections = 0;
-	for (int i = 0; i<g->nV; i++) {
-		if (g->edges[i][dest])
-			connections++;
-	}
-	return connections;
-}
-
-//Counts outgoing connections to a graph node
-int outConnect(Graph g, Vertex src) {
-	int connections = 0;
-	for (int i = 0; i<g->nV; i++) {
-		if (g->edges[src][i])
-			connections++;
-	}
-	return connections;
-}
-
-//Calculates Win value
-double Win(Graph g, int v, int u){
-    double numer = inConnect(g,u)==0? 0.5:inConnect(g,u);
-    double denom=0;
-    for (int i=0; i < g->nV; i++){
-        if (i==v)
-            continue;
-        if (g->edges[v][i]){
-            if (inConnect(g,i) == 0)
-                denom += 0.5;
-            else
-                denom += inConnect(g,i);
-        }
-    }
-    if (denom==0)
-        denom=0.5;
-    return numer/denom;
-}
-
-//Calculates Wout value
-double Wout(Graph g, int v, int u){
-    double numer = outConnect(g,u)==0? 0.5:outConnect(g,u);
-    double denom=0;
-    for (int i=0; i < g->nV; i++){
-        if (i==v)
-            continue;
-        if (g->edges[v][i]) {
-            if (outConnect(g,i) == 0)
-                denom += 0.5;
-            else
-                denom += outConnect(g,i);
-        }
-    }
-    if (denom==0)
-        denom=0.5;
-    return numer/denom;
-}
-
-//Returns a NULL pointer as a new Tree
-Tree newTree(void) {
-    return NULL;
-}
-//Creates a new empty tree node
-Tree newTreeNode(char *word, List files) {
-    Tree new = malloc(sizeof(*new));
-    new->word = malloc(sizeof(char)*(strlen(word)+1));
-    strcpy(new->word, word);
-    new->fileList=files;
-    new->left=NULL;
-    new->right=NULL;
-    return new;
-}
-
-//Function to insert an item into the tree using the AVL method
-//Adapted from 2019 lab04
-Tree insertAVL(Tree t, char* it, List files) {
-	if (t == NULL) return newTreeNode (it, files);
-	int diff = strcmp(it, t->word);
-	if (diff == 0) {
-        t->word = it;
-        t->fileList = files;
-    } else if (diff > 0) t->left  = insertAVL (t->left, it, files);
-	else if (diff < 0) t->right = insertAVL (t->right, it, files);
-
-	int dL = depth(t->left);
-	int dR = depth(t->right);
-	if ((dL - dR) > 1) t = rotateR (t);
-	if ((dR - dL) > 1) t = rotateL (t);
-	return t;
-}
-
-//Function to rotate Tree Right
-//Adapted from 2019 lab04
-Tree rotateL (Tree n2)
-{
-	if (n2 == NULL) return NULL;
-	Tree n1 = n2->right;
-	if (n1 == NULL) return n2;
-	n2->right = n1->left;
-	n1->left = n2;
-	return n1;
-}
-
-//Function to rotate Tree Right
-//Adapted from 2019 lab04
-Tree rotateR (Tree n1) {
-	if (n1 == NULL) return NULL;
-	Tree n2 = n1->left;
-	if (n2 == NULL) return n1;
-	n1->left = n2->right;
-	n2->right = n1;
-	return n2;
-}
-
-//Calculates depth beneath current node
-//Adapted from 2019 lab04
-int depth (Tree t) {
-	if (t == NULL) return 0;
-	int ldepth = depth (t->left);
-	int rdepth = depth (t->right);
-	return 1 + ((ldepth > rdepth) ? ldepth : rdepth);
-}
-
-//Searches the tree to find a node
-Tree FindNode(Tree t, char *word) {
-    if (t==NULL) 
-        return NULL;
-    else if (strcmp(word, t->word) > 0) 
-        return FindNode(t->left, word);
-    else if (strcmp(word, t->word) < 0) 
-        return FindNode(t->right, word);
-    else 
-        return t;
-}
-
-//Print the tree in Linear order
-void ShowTreeLinear (Tree t) {
-	if (t == NULL) return;
-	ShowTreeNode (t);
-	ShowTreeLinear (t->right);
-	ShowTreeLinear (t->left);
-}
-
-//Print the tree in Infix order
-void ShowTreeInfix (Tree t) {
-	if (t == NULL) return;
-	ShowTreeInfix (t->right);
-	ShowTreeNode (t);
-	ShowTreeInfix (t->left);
-}
-
-//Prints a tree node
-void ShowTreeNode (Tree t) {
-	if (t == NULL) return;
-	printf ("%s ", t->word);
-    showList(t->fileList);
-    printf("\n");
-}
-
-//Frees memory associated with tree
-void dropTree(Tree t) {
-    if (t==NULL)
-        return;
-    dropTree(t->left);
-    dropTree(t->right);
-    freeList(t->fileList);
-    free(t->word);
-    free(t);
     return;
 }
